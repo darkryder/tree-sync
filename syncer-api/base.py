@@ -59,7 +59,7 @@ class InformationNode(object):
 
 
 class Node(object):
-    def __init__(self, pk, update_hash_queue, **info_data):
+    def __init__(self, pk, update_hash_queue, _depth=0, **info_data):
         self._set_base_attribute('_pk', pk)
         self._set_base_attribute('_parent', None)
         self._set_base_attribute('_update_hash_queue', update_hash_queue)
@@ -68,10 +68,11 @@ class Node(object):
             lambda: len(self._children))
         self._set_base_attribute('_children_hash', DEFAULT_HASH_VALUE)
         self._set_base_attribute('_hash', DEFAULT_HASH_VALUE)
+        self._set_base_attribute('_depth', _depth)
         self._set_base_attribute('_info',
             InformationNode(pk, **info_data))
         self._set_base_attribute('_base_attributes',[
-            '_pk', '_parent', '_update_hash_queue',
+            '_pk', '_parent', '_update_hash_queue', '_depth'
             '_children', '_children_hash', '_hash', '_info'])
 
         self._update_hash()
@@ -157,24 +158,19 @@ class SyncTree(object):
         if not root_info_data:
             raise RuntimeError(
                 "Tree should be initialised with root node data")
-        self.root = Node(0, None, **root_info_data)
-        self.root.parent = self.root
+        self.update_hash_queue = set()
+        self.root = Node(0, self.update_hash_queue, _depth=0, **root_info_data)
+        self.root._parent = self.root
         self._last_pk = 0
         self._pk_to_node_mapper = {0: self.root}
 
-    def add_node(self, parent_pk, **info_data):
-        parent = self.get_node(parent_pk)
+    def add_node(self, parent, **info_data):
         self._last_pk += 1
-        node = Node(self._last_pk, parent, **info_data)
+        node = Node(self._last_pk, self.update_hash_queue,
+                    _depth = parent._depth + 1, **info_data)
         parent.add_child(node)
         self._pk_to_node_mapper[self._last_pk] = node
-
-        parents_to_update = [parent]
-        temp = parent.parent
-        while (temp != temp.parent):
-            parents_to_update.append(temp)
-        for p in parents_to_update:
-            p._update_children_hash()
+        return node
 
     def remove_node(self, node):
         raise RuntimeError(
@@ -187,3 +183,23 @@ class SyncTree(object):
             raise RuntimeError(
                 "Could not find node corresponding to pk: " + repr(pk))
         return node
+
+    def refresh_tree(self):
+        """ Refreshes the Sync tree hashes
+        """
+        final_recursive_parents = set(self.get_node(x) for x in self.update_hash_queue)
+
+        for x in self.update_hash_queue:
+            node = self.get_node(x)
+            if node == node._parent: break
+            final_recursive_parents.add(node._parent)
+
+        progress = {node: False for node in final_recursive_parents}
+
+        for node in sorted(list(final_recursive_parents),
+                key=lambda x: x._depth, reverse=True):
+            if progress[node]: continue
+            node._update_hash()
+            progress[node] = True
+
+        self.update_hash_queue.clear()

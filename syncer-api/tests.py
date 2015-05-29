@@ -267,35 +267,89 @@ class TestNodeCore(unittest.TestCase):
         self.assertTrue(TestNodeCore.check_sync_hash_old_new(
             old_sync_hash, new_sync_hash, False, False, True))
 
-# class TestTreeAndNodeCreations(unittest.TestCase):
 
-    # def test_tree_created(self):
-    #     tree = SyncTree(**temp_info)
-    #     self.assertIsInstance(tree, SyncTree)
-    #     self.assertRaises(RuntimeError, callableObj=SyncTree)
-    #     self.assertEqual(tree.root, tree.root.parent)
-    #     self.assertEqual(tree.root.pk, 0)
-    #     self.assertEqual(tree.get_node(0), tree.root)
+class TestSyncTreeCore(unittest.TestCase):
 
-    # def test_node_created(self):
-    #     node = Node(0, **temp_info)
-    #     self.assertIsInstance(node,Node)
-    #     self.assertListEqual(node.children, [])
-    #     self.assertNotEqual(self._hash, DEFAULT_HASH_VALUE)
+    def test_tree_created(self):
+        tree = SyncTree(**temp_info)
+        self.assertIsInstance(tree, SyncTree)
 
-    # def test_node_info_on_creation(self):
-    #     node = Node(0, **temp_info)
-    #     self.assertIsInstance(node._info, InformationNode)
+        with self.assertRaises(RuntimeError):
+            temp = SyncTree()
 
-    #     for k,v in temp_info.iteritems():
-    #         self,assertEqual(getattr(node, k), v)
+        self.assertEqual(tree.root, tree.root._parent)
+        self.assertEqual(tree.root._pk, 0)
+        self.assertEqual(tree.get_node(0), tree.root)
 
-    #     # test setting and retrieving fake data
-    #     node.some_anything_really_attribute = "some_data"
-    #     self.assertEqual(node.some_anything_really_attribute, "some_data")
-    #     self.assertEqual(node._info.some_anything_really_attribute, "some_data")
-    #     self.assertEqual(node._info._data_holder['some_anything_really_attribute'], "some_data")
-    #     self.assertRaises(AttributeError, getattr, args=[node, "nonexistent"])
+    def test_setting_and_getting_node(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root
+        root_child1 = tree.add_node(root, **temp_info2)
+        root_child2 = tree.add_node(root, **temp_info2)
+        root_child1_child1 = tree.add_node(root_child1, **temp_info)
+
+        self.assertEqual(tree.get_node(root_child2._pk), root_child2)
+        self.assertEqual(tree.get_node(root_child1_child1._pk),
+            root_child1_child1)
+
+        self.assertSetEqual(tree.update_hash_queue, {
+            root._pk, root_child1._pk, root_child2._pk,
+            root_child1_child1._pk})
+
+    def test_adding_node_adds_parent_to_update_queue(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root
+
+        tree.update_hash_queue.clear()
+        node = tree.add_node(root, **temp_info2)
+        self.assertIn(root._pk, tree.update_hash_queue)
+        for x in range(10):
+            child = tree.add_node(node, **temp_info)
+            node = child
+
+        tree.update_hash_queue.clear()
+        new = tree.add_node(child, **temp_info2)
+
+        self.assertIn(child._pk, tree.update_hash_queue)
+
+    def test_tree_depth(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root
+        root_child1 = tree.add_node(root, **temp_info2)
+        root_child2 = tree.add_node(root, **temp_info2)
+        root_child1_child1 = tree.add_node(root_child1, **temp_info)
+
+        self.assertEqual(root._depth, 0)
+        self.assertEqual(root_child1._depth, 1)
+        self.assertEqual(root_child2._depth, 1)
+        self.assertEqual(root_child1_child1._depth, 2)
+
+
+    def test_add_node_changes_hash(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root
+        old_root_hash = root.get_hash()
+        root_child1 = tree.add_node(root, **temp_info2)
+        new_root_hash = root.get_hash()
+
+        self.assertTrue(TestNodeCore.check_sync_hash_old_new(old_root_hash, new_root_hash,
+            False, False, False))
+
+    def test_refresh_hash_works(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root
+        root_child1 = tree.add_node(root, **temp_info2)
+        root_child2 = tree.add_node(root, **temp_info2)
+        root_child1_child1 = tree.add_node(root_child1, **temp_info)
+
+        tree.refresh_tree()
+
+        old_sync_hashes = {x: x.get_sync_hash() for x in tree._pk_to_node_mapper.values()}
+        for x in sorted(tree._pk_to_node_mapper.values(), key=lambda x: x._depth, reverse=True):
+            x._update_hash()
+        new_sync_hashes = {x: x.get_sync_hash() for x in tree._pk_to_node_mapper.values()}
+
+        self.assertDictEqual(old_sync_hashes, new_sync_hashes)
 
 if __name__ == '__main__':
     unittest.main()

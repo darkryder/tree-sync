@@ -22,11 +22,3 @@ def check_valid_hash(h):
 
 def load_sync_api_into_memcache(tree):
     pass
-
-def recompute_tree_hash(tree):
-    # if not isinstance(tree, SyncTree):
-    #     raise Exception
-    # for node in tree._pk_to_node_mapper.values():
-    #     node._info._update_hash()
-    # tree.root._update_children_hash()
-    pass
