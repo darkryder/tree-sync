@@ -1,0 +1,2 @@
+class CouldNotHashException(Exception):
+    pass
