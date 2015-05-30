@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from exceptions import RuntimeError, ValueError
-from base import SyncTree, Node
+from base import SyncTree
 
 
 class Handler(object):
@@ -10,20 +10,33 @@ class Handler(object):
     def _get_node(self, request):
         try:
             return self.tree.get_node(int(request.args.get('pk', None)))
-        except (RuntimeError, ValueError) as e:
+        except (RuntimeError, ValueError):
             return None
 
     def check(self, request):
         node = self._get_node(request)
         if node is None:
             return jsonify(success=False, error_message="Could not find pk")
-        return jsonify(success=True, data=str(vars(node)))
+        return jsonify(success=True, hash=node.get_sync_hash())
 
     def fetch(self, request):
-        pass
+        node = self._get_node(request)
+        if node is None:
+            return jsonify(success=False, error_message="Could not find pk")
+        response = {"success": True,
+                    "hash": node.get_sync_hash(),
+                    "pk": node._pk,
+                    "data": node._info._data_holder
+                    }
+        return jsonify(**response)
 
     def check_children(self, request):
-        pass
+        node = self._get_node(request)
+        if node is None:
+            return jsonify(success=False, error_message="Could not find pk")
+        return jsonify(success=True,
+                       number_of_children=node._number_of_children(),
+                       hash={x._pk: x.get_sync_hash() for x in node._children})
 
 
 class Example(object):
@@ -45,6 +58,7 @@ class Example(object):
         prosort = self.tree.add_node(CSE, event_name="Foobar Prosort", prizes=10000)
         hackOn = self.tree.add_node(CSE, event_name="HackOn", organisers=["a", "b"])
         IOT_hackathon = self.tree.add_node(ECE, event_name="IOT", food=True)
+
         self.tree.refresh_tree()
 
     def set_up(self):
