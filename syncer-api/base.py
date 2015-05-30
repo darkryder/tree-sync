@@ -191,8 +191,9 @@ class SyncTree(object):
 
         for x in self.update_hash_queue:
             node = self.get_node(x)
-            if node == node._parent: break
-            final_recursive_parents.add(node._parent)
+            while node != node._parent:
+                final_recursive_parents.add(node._parent)
+                node = node._parent
 
         progress = {node: False for node in final_recursive_parents}
 

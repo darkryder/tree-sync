@@ -351,5 +351,47 @@ class TestSyncTreeCore(unittest.TestCase):
 
         self.assertDictEqual(old_sync_hashes, new_sync_hashes)
 
+    # test for recursive tree hash bug
+    def test_tree_refreshes_properly_on_adding_node_way_down(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root # pk 0
+        root_child1 = tree.add_node(root, **temp_info) # pk 1
+        root_child2 = tree.add_node(root, **temp_info) # pk 2
+        root_child1_child1 = tree.add_node(root_child1, **temp_info) # pk 3
+        root_child2_child1 = tree.add_node(root_child2, **temp_info) # pk 4
+
+        tree.refresh_tree()
+
+        old_sync_hashes = {x: tree.get_node(x).get_sync_hash() for x in range(5)}
+        root_child1_child1_child1 = tree.add_node(root_child1_child1, **temp_info)
+        tree.refresh_tree()
+        new_sync_hashes = {x: tree.get_node(x).get_sync_hash() for x in range(5)}
+
+        # root should have total hash and children hash changed
+        self.assertTrue(TestNodeCore.check_sync_hash_old_new(
+            old_sync_hashes[0], new_sync_hashes[0],
+            False, True, False))
+
+        # root_child1 should have total hash and children hash changed
+        self.assertTrue(TestNodeCore.check_sync_hash_old_new(
+            old_sync_hashes[1], new_sync_hashes[1],
+            False, True, False))
+
+        # root_child2 should have no hash change
+        self.assertTrue(TestNodeCore.check_sync_hash_old_new(
+            old_sync_hashes[2], new_sync_hashes[2],
+            True, True, True))
+
+        # root_child1_child1 should have total hash and children hash changed
+        self.assertTrue(TestNodeCore.check_sync_hash_old_new(
+            old_sync_hashes[3], new_sync_hashes[3],
+            False, True, False))
+
+        # root_child2_child1 should have no hash change
+        self.assertTrue(TestNodeCore.check_sync_hash_old_new(
+            old_sync_hashes[4], new_sync_hashes[4],
+            True, True, True))
+
+
 if __name__ == '__main__':
     unittest.main()
