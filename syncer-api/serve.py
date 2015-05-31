@@ -73,7 +73,7 @@ class Example(object):
         self.tree.refresh_tree()
 
     def set_up(self):
-        @self.app.route('/api/sync')
+        @self.app.route('/api/sync/node')
         def end_point():
             request_type = request.args.get('type', 'check')
             handle_request = {'check': self.handler.check,
@@ -83,6 +83,22 @@ class Example(object):
                 return jsonify(success=False,
                                error_message="Unknown API call type.")
             return handle_request[request_type](request)
+
+        @self.app.route('/api/sync')
+        def refresh_point():
+            DEFAULT_STARTING_TIME = 0
+            try:
+                client_time = float(request.args.get(
+                    'updated_time', DEFAULT_STARTING_TIME))
+            except ValueError:
+                client_time = DEFAULT_STARTING_TIME
+            nodes = self.tree.get_nodes_after_time(client_time)
+            return jsonify(success=True,
+                           data={node._pk: {
+                                  "hash": node.get_sync_hash(),
+                                  "updated_time": node.get_update_time()}
+                                 for node in nodes})
+
 
 if __name__ == '__main__':
     example = Example()

@@ -496,5 +496,49 @@ class TestSyncTreeCore(unittest.TestCase):
             old_timings, new_timings = new_timings, [x.get_update_time() for x in random_tree._pk_to_node_mapper.values()]
             self.assertNotEqual(old_timings, new_timings)
 
+
+    def test_get_nodes_after_time(self):
+
+        now = time_now()
+
+        tree = SyncTree(**temp_info)
+        root = tree.root # pk 0
+        root_child1 = tree.add_node(root, **temp_info) # pk 1
+        root_child2 = tree.add_node(root, **temp_info) # pk 2
+        root_child1_child1 = tree.add_node(root_child1, **temp_info) # pk 3
+        root_child2_child1 = tree.add_node(root_child2, **temp_info) # pk 4
+        root_child2_child1_child1 = tree.add_node(root_child2_child1, **temp_info) # pk 5
+        set_all = set([root, root_child1, root_child2, root_child1_child1, root_child2_child1, root_child2_child1_child1])
+        empty = set()
+
+        tree.refresh_tree()
+
+        changed_nodes = tree.get_nodes_after_time(now)
+        self.assertSetEqual(changed_nodes, set_all)
+
+        now = time_now()
+        changed_nodes = tree.get_nodes_after_time(now)
+        self.assertSetEqual(changed_nodes, empty)
+
+        root_child1_child1.abc = "asg"
+        tree.refresh_tree()
+        changed_nodes = tree.get_nodes_after_time(now)
+        self.assertSetEqual(changed_nodes, set([root_child1_child1, root_child1, root]))
+
+        root.abd = "asg"
+        tree.refresh_tree()
+        changed_nodes = tree.get_nodes_after_time(now)
+        self.assertSetEqual(changed_nodes, set([root_child1_child1, root_child1, root]))
+
+        now = time_now()
+        changed_nodes = tree.get_nodes_after_time(now)
+        self.assertSetEqual(changed_nodes, empty)
+
+        root_child2_child1_child1.abc = "def"
+        root_child1.abc = "def"
+        tree.refresh_tree()
+        self.assertEqual(tree.get_nodes_after_time(now), set([root, root_child1, root_child2, root_child2_child1, root_child2_child1_child1]))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -162,6 +162,14 @@ class Node(object):
             "Delete child by setting a deleted=True to its info, \
             and handle it")
 
+    def _get_nodes_updated_in_my_subtree(self, client_time, nodes):
+        if self.get_update_time() < client_time: return nodes # discard this complete subtree
+        else:
+            nodes.add(self)
+            for child in self._children:
+                child._get_nodes_updated_in_my_subtree(client_time, nodes)
+        return nodes
+
     def pretty_print(self):
         print self._pk, self._info._data_holder, self._children
         for x in self._children: x.pretty_print()
@@ -217,6 +225,10 @@ class SyncTree(object):
             progress[node] = True
 
         self.update_hash_queue.clear()
+
+    def get_nodes_after_time(self, client_time):
+        return self.root._get_nodes_updated_in_my_subtree(
+            client_time, set())
 
     def pretty_print(self):
         self.root.pretty_print()
