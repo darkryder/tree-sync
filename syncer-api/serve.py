@@ -38,16 +38,20 @@ class Handler(object):
 
         return jsonify(**response)
 
-    def check_children(self, request):
+    def _get_parent(self, node):
+        answer = []
+        while node._parent != node:
+            answer.append(node._parent._pk)
+            node = node._parent
+        return answer
+
+    def get_parents(self, request):
         nodes = self._get_nodes(request)
         if nodes is None:
             return jsonify(success=False, error_message="Could not find pk")
         return jsonify(success=True,
-                       data={node._pk: {
-                            "number_of_children": node._number_of_children(),
-                            "hash": {child._pk: child.get_sync_hash()
-                                     for child in node._children}
-                        } for node in nodes})
+                       data={node._pk: self._get_parent(node)
+                             for node in nodes})
 
 
 class Example(object):
@@ -78,7 +82,7 @@ class Example(object):
             request_type = request.args.get('type', 'check')
             handle_request = {'check': self.handler.check,
                               'fetch': self.handler.fetch,
-                              'check_children': self.handler.check_children}
+                              'get_parents': self.handler.get_parents}
             if request_type not in handle_request:
                 return jsonify(success=False,
                                error_message="Unknown API call type.")
