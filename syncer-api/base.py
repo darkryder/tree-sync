@@ -1,3 +1,4 @@
+from time import time as time_now
 from exceptions import AttributeError, NotImplementedError, RuntimeError
 from utils import hash_md5
 # import pdb
@@ -71,11 +72,16 @@ class Node(object):
         self._set_base_attribute('_depth', _depth)
         self._set_base_attribute('_info',
             InformationNode(pk, **info_data))
+        self._set_base_attribute('_updated_at', time_now())
         self._set_base_attribute('_base_attributes',[
             '_pk', '_parent', '_update_hash_queue', '_depth'
-            '_children', '_children_hash', '_hash', '_info'])
+            '_children', '_children_hash', '_hash', '_info',
+            '_updated_at'])
 
         self._update_hash()
+
+    def _touch(self):
+        self._set_base_attribute('_updated_at', time_now())
 
     def _set_base_attribute(self, name, value):
         """ Sets the base attributes of the Node
@@ -126,6 +132,7 @@ class Node(object):
         self._hash = hash_md5(self.get_children_hash() + self.get_info_hash())
         new = self.get_hash()
 
+        self._touch()
         if new != old:
             # propogate hash upwards
             self._update_hash_queue.add(self._pk)
@@ -133,6 +140,7 @@ class Node(object):
     def get_info_hash(self): return self._info._info_hash
     def get_children_hash(self): return self._children_hash
     def get_hash(self): return self._hash
+    def get_update_time(self): return self._updated_at
 
     def get_sync_hash(self):
         return (self.get_hash(),
@@ -145,6 +153,8 @@ class Node(object):
             raise NotImplementedError("Child should be of type " + type(self))
         node._parent = self
         self._children.append(node)
+        node._update_hash()
+        self._update_hash_queue.add(node._pk)
         self._update_hash()
 
     def remove_child(self, node):
@@ -152,6 +162,9 @@ class Node(object):
             "Delete child by setting a deleted=True to its info, \
             and handle it")
 
+    def pretty_print(self):
+        print self._pk, self._info._data_holder, self._children
+        for x in self._children: x.pretty_print()
 
 class SyncTree(object):
     def __init__(self, **root_info_data):
@@ -204,3 +217,6 @@ class SyncTree(object):
             progress[node] = True
 
         self.update_hash_queue.clear()
+
+    def pretty_print(self):
+        self.root.pretty_print()

@@ -1,4 +1,5 @@
-from random import randint
+from time import time as time_now
+from random import randint, choice
 import unittest
 from base import SyncTree, Node, InformationNode, RuntimeError, DEFAULT_HASH_VALUE, AttributeError, NotImplementedError
 from utils import hash_md5, check_valid_hash
@@ -197,7 +198,7 @@ class TestNodeCore(unittest.TestCase):
             parent.remove_child(childPK)
 
         # update_queue should have only parent added.
-        self.assertSetEqual(parent._update_hash_queue, set([parent._pk]))
+        self.assertSetEqual(parent._update_hash_queue, set([parent._pk, child._pk]))
 
     def test_hash_and_queue_changes_in_a_complex_tree(self):
         update_queue = set()
@@ -225,7 +226,7 @@ class TestNodeCore(unittest.TestCase):
         old_root_hash = root.get_sync_hash()
         old_root_child1_hash = root_child1.get_sync_hash()
         root.add_child(root_child1)
-        self.assertSetEqual(update_queue, set([root._pk]))
+        self.assertSetEqual(update_queue, set([root._pk, root_child1._pk]))
         new_root_hash = root.get_sync_hash()
         new_root_child1_hash = root_child1.get_sync_hash()
 
@@ -233,10 +234,10 @@ class TestNodeCore(unittest.TestCase):
         self.assertTrue(TestNodeCore.check_sync_hash_old_new(old_root_child1_hash, new_root_child1_hash, True, True, True))
 
         root_child1.add_child(root_child1_child1)
-        self.assertSetEqual(update_queue, set([root._pk, root_child1._pk]))
+        self.assertSetEqual(update_queue, set([root._pk, root_child1._pk, root_child1_child1._pk]))
 
         root.add_child(root_child2)
-        self.assertSetEqual(update_queue, set([root._pk, root_child1._pk]))
+        self.assertSetEqual(update_queue, set([root._pk, root_child1._pk, root_child1_child1._pk, root_child2._pk]))
 
         #create complete relationship
         root_child1.add_child(root_child1_child2)
@@ -252,20 +253,25 @@ class TestNodeCore(unittest.TestCase):
         self.assertEqual(root_child2_child1._number_of_children(), 0)
         self.assertEqual(root_child2_child2._number_of_children(), 0)
 
-        self.assertEqual(len(update_queue), 4)
+        self.assertEqual(len(update_queue), 8)
 
         self.assertIn(root_child1_child1_child1, root_child1_child1._children)
 
         # test that changing a child's description, changes its hash and adds self
         # pk in the update queue
 
-        self.assertNotIn(root_child2_child2._pk, update_queue)
+        update_queue.remove(root_child2_child2._pk)
         old_sync_hash = root_child2_child2.get_sync_hash()
         root_child2_child2.something = "Sometihng"
         new_sync_hash = root_child2_child2.get_sync_hash()
         self.assertIn(root_child2_child2._pk, update_queue)
         self.assertTrue(TestNodeCore.check_sync_hash_old_new(
             old_sync_hash, new_sync_hash, False, False, True))
+
+    def test_node_gets_present_time_as_updated_time_on_insertion(self):
+        now = time_now()
+        node = Node(0, set(), **temp_info)
+        self.assertAlmostEqual(now, node.get_update_time(), places=0)
 
 
 class TestSyncTreeCore(unittest.TestCase):
@@ -392,6 +398,103 @@ class TestSyncTreeCore(unittest.TestCase):
             old_sync_hashes[4], new_sync_hashes[4],
             True, True, True))
 
+        self.assertTrue(TestSyncTreeCore.validate_last_updated_relationship(tree))
+
+    def test_updated_time_gets_touched_on_adding_info(self):
+        tree = SyncTree(**temp_info)
+        root = tree.root # pk 0
+
+        tree.refresh_tree()
+
+        old = root.get_update_time()
+        tree.refresh_tree()             # no change should not cause time updating
+        new = root.get_update_time()
+        self.assertEqual(old, new)
+
+        root.abc = "Something"
+        tree.refresh_tree()
+        new = root.get_update_time()
+        self.assertNotEqual(old, new)
+
+        old = root.get_update_time()
+
+        root_child1 = tree.add_node(root, **temp_info) # pk 1
+        root_child2 = tree.add_node(root, **temp_info) # pk 2
+        root_child1_child1 = tree.add_node(root_child1, **temp_info) # pk 3
+        root_child2_child1 = tree.add_node(root_child2, **temp_info) # pk 4
+
+        tree.refresh_tree()
+        new = root.get_update_time()
+        self.assertNotEqual(old, new)
+
+        temp = tree.add_node(root_child1_child1, **temp_info) # pk5
+        old_times = [tree.get_node(x).get_update_time() for x in range(5)]
+        tree.refresh_tree()
+        new_times = [tree.get_node(x).get_update_time() for x in range(5)]
+
+        self.assertEqual(map(lambda x, y: x == y, old_times, new_times),[
+            False,  # update time of root should have changed
+            False,  # update time of root_child1 should have changed
+            True,   # update time of root_child2 should not have changed
+            False,  # update time of root_child1_child1 should have changed
+            True,   # update time of root_child2_child1 should not have changed
+            ]
+        )
+        self.assertTrue(TestSyncTreeCore.validate_last_updated_relationship(tree))
+
+        random_tree = TestSyncTreeCore.create_random_tree(1000)
+        random_tree.refresh_tree()
+        self.assertTrue(TestSyncTreeCore.validate_last_updated_relationship(random_tree))
+
+    @staticmethod
+    def validate_last_updated_relationship(tree):
+        nodes = tree._pk_to_node_mapper.values()
+        for node in sorted(nodes, key=lambda x: x._depth, reverse=True):
+            if node._parent == node: continue
+            if not (node.get_update_time() <= node._parent.get_update_time()): return False
+        return True
+
+    # note to self: Isn't introducing randomness in tests horrendous?
+    @staticmethod
+    def create_random_tree(number_of_nodes, initial_nodes_to_randomly_create_subtrees_under=None, parent_tree=None):
+        init_given = initial_nodes_to_randomly_create_subtrees_under
+
+        if (init_given is None and parent_tree is not None) or \
+            (init_given is not None and parent_tree is None): raise RuntimeError(
+                "You should give parent_tree param if initial_nodes_to_randomly_create_subtrees_under is given")
+
+        if parent_tree:
+            parent_nodes_options = init_given
+        else:
+            parent_tree = SyncTree(**temp_info)
+            parent_nodes_options = [parent_tree.root]
+
+        for x in xrange(number_of_nodes - 1): # subtract root
+            parent = choice(parent_nodes_options)
+            node = parent_tree.add_node(parent, **temp_info2)
+            parent_nodes_options.append(node)
+
+        return parent_tree
+
+    def test_that_the_time_relationship_holds(self):
+
+        random_tree = TestSyncTreeCore.create_random_tree(1000)
+        old_timings = [x.get_update_time() for x in random_tree._pk_to_node_mapper.values()]
+        random_tree.refresh_tree()
+        new_timings = [x.get_update_time() for x in random_tree._pk_to_node_mapper.values()]
+        self.assertTrue(TestSyncTreeCore.validate_last_updated_relationship(random_tree))
+        self.assertNotEqual(old_timings, new_timings)
+
+        random_tree.refresh_tree()
+        old_timings, new_timings = new_timings, [x.get_update_time() for x in random_tree._pk_to_node_mapper.values()]
+        self.assertListEqual(old_timings, new_timings)
+
+        for x in range(100):
+            temp = choice(random_tree._pk_to_node_mapper.values())
+            temp.abc = x
+            random_tree.refresh_tree()
+            old_timings, new_timings = new_timings, [x.get_update_time() for x in random_tree._pk_to_node_mapper.values()]
+            self.assertNotEqual(old_timings, new_timings)
 
 if __name__ == '__main__':
     unittest.main()
