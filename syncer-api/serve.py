@@ -7,36 +7,47 @@ class Handler(object):
     def __init__(self, tree):
         self.tree = tree
 
-    def _get_node(self, request):
+    def _get_nodes(self, request):
         try:
-            return self.tree.get_node(int(request.args.get('pk', None)))
+            values = []
+            for x in request.args.getlist('pk'):
+                values.append(self.tree.get_node(
+                    int(x)))
+            return values
         except (RuntimeError, ValueError):
             return None
 
     def check(self, request):
-        node = self._get_node(request)
-        if node is None:
+        nodes = self._get_nodes(request)
+        if nodes is None:
             return jsonify(success=False, error_message="Could not find pk")
-        return jsonify(success=True, hash=node.get_sync_hash())
+        return jsonify(success=True, data={
+            node._pk: node.get_sync_hash() for node in nodes})
 
     def fetch(self, request):
-        node = self._get_node(request)
-        if node is None:
+        nodes = self._get_nodes(request)
+        if nodes is None:
             return jsonify(success=False, error_message="Could not find pk")
         response = {"success": True,
-                    "hash": node.get_sync_hash(),
-                    "pk": node._pk,
-                    "data": node._info._data_holder
+                    "data": {node._pk: {
+                        "hash": node.get_sync_hash(),
+                        "data": node._info._data_holder
+                        }
+                        for node in nodes}
                     }
+
         return jsonify(**response)
 
     def check_children(self, request):
-        node = self._get_node(request)
-        if node is None:
+        nodes = self._get_nodes(request)
+        if nodes is None:
             return jsonify(success=False, error_message="Could not find pk")
         return jsonify(success=True,
-                       number_of_children=node._number_of_children(),
-                       hash={x._pk: x.get_sync_hash() for x in node._children})
+                       data={node._pk: {
+                            "number_of_children": node._number_of_children(),
+                            "hash": {child._pk: child.get_sync_hash()
+                                     for child in node._children}
+                        } for node in nodes})
 
 
 class Example(object):
